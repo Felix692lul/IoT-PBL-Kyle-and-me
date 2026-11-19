@@ -18,7 +18,7 @@ unsigned long lastScanTime = 0;
 
 MFRC522 rfid(RFID_SS, RFID_RST); //RFID initialization
 String authorizedUIDs[] = {"9C 2B 4D 05"}; //authorized UIDs to be changed if neccessary
-int numAuthorized = 2; //Nb of authorized UIDs
+int numAuthorized = 1; //Nb of authorized UIDs
 bool roomOccupied = false;
 
 
@@ -58,11 +58,12 @@ void allIndicatorsOff()
 void AccessGranted() 
 {
 
-  allIndicatorsOff(); 
-  if(roomOccupied == true){
-    Serial.println("Room occupied!");
+  allIndicatorsOff();
+  roomOccupied = !roomOccupied; //Sets the room occupied to true
+  if(roomOccupied == true){ //if room is occupied, make green LED high
+    Serial.println("Room occupied!"); 
     digitalWrite(GREEN_LED,HIGH);
-    }else{
+    }else{        
       Serial.println("Room free!");
       digitalWrite(GREEN_LED,LOW);
     }
@@ -71,7 +72,10 @@ void AccessDenied()
 { 
   Serial.println("Unknown card detected!");
   allIndicatorsOff(); 
-  digitalWrite(RED_LED, HIGH); 
+  digitalWrite(RED_LED, HIGH);
+  delay(500);
+  digitalWrite(RED_LED, LOW);
+  delay(500); 
 } 
 
 void onCardScanned(String uid) 
@@ -97,6 +101,7 @@ void onCardScanned(String uid)
 
 
 void setup() {
+Serial.begin(115200);
 SPI.begin(); //initalize SPI communication
 rfid.PCD_Init();
 delay(10);
@@ -108,9 +113,8 @@ pinMode(RED_LED, OUTPUT);
 void loop() {
 if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true) 
 { 
-  String uid = getUID(); 
-  Serial.print("Card UID: "); 
-  Serial.println(); 
+  String uid = getUID();
+  onCardScanned(uid);  
   rfid.PICC_HaltA(); //puts the card to sleep
   rfid.PCD_StopCrypto1(); //ends the authentication
 }

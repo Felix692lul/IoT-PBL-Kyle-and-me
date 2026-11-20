@@ -15,12 +15,17 @@
  String lastUID = "";
  
 //millis Timers:
-unsigned long lastScanTime = 0; 
+unsigned long lastScanTime = 0;
+unsigned long Start = 0;
+unsigned long Time = 0;
+unsigned long lastblinktime = 0;
 
 MFRC522 rfid(RFID_SS, RFID_RST); //RFID initialization
 String authorizedUIDs[] = {"9C 2B 4D 05"}; //authorized UIDs to be changed if neccessary
 int numAuthorized = 1; //Nb of authorized UIDs
 bool roomOccupied = false;
+bool indicatorOn = false;
+bool blinking = false;
 
 
 
@@ -70,7 +75,12 @@ bool isAuthorized(String uid) {
   return false; 
 }
 
-
+void Startindicatortimer(unsigned long duration)
+{ 
+ Start = millis();
+ Time = duration;
+ indicatorOn = true;
+}  
 void allIndicatorsOff() 
 { 
   digitalWrite(GREEN_LED, LOW); 
@@ -89,16 +99,33 @@ void AccessGranted()
       Serial.println("Room free!");
       digitalWrite(GREEN_LED,LOW);
     }
+    blinking = false;
+    digitalWrite(RED_LED, LOW);
+    indicatorOn = false;
 }
+
 void AccessDenied() 
 { 
   Serial.println("Unknown card detected!");
-  allIndicatorsOff(); 
+  allIndicatorsOff();
+  blinking = true;
   digitalWrite(RED_LED, HIGH);
-  delay(500);
-  digitalWrite(RED_LED, LOW);
-  delay(500); 
-} 
+  lastblinktime = millis();
+  Startindicatortimer(2000); //The RED LED will only blink for 2 second, adjust if needed
+}
+
+void Timerexpired()
+{
+allIndicatorsOff();
+indicatorOn = false;
+blinking = false;
+//GREEN_LED MATCHES THE ROOM STATE
+if (roomOccupied == true) {
+  digitalWrite(GREEN_LED, HIGH);
+  } else {
+    digitalWrite(GREEN_LED, LOW);
+  }
+}
 
 void onCardScanned(String uid) 
 { 
@@ -174,6 +201,15 @@ if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true)
   rfid.PICC_HaltA(); //puts the card to sleep
   rfid.PCD_StopCrypto1(); //ends the authentication
 }
+  if (indicatorOn  == true && millis() - Start >= Time) { // Timer 
+    Timerexpired(); //calls the function timer expired
+  } 
+  
+  //BLINKING LOGIC FOR RED LED
+  if(blinking == true && millis()-lastblinktime >= 300){
+   lastblinktime = millis();
+   digitalWrite(RED_LED,!digitalRead(RED_LED));
+  }
 
  // Check for help button press
   if (helpFlag == true) {

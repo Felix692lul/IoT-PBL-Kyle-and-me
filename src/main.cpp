@@ -1,24 +1,57 @@
 #include <Arduino.h> // Libraries
 #include <SPI.h>
+#include <Wire.h>
 #include <MFRC522.h>
-
+#include <Adafruit_GFX.h> 
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_Sensor.h> 
+#include <Adafruit_BMP280.h>
 
 // Global variables
- //Pins to be determined
- #define RFID_SS 22
- #define RFID_RST 23
- #define GREEN_LED 16
- #define RED_LED 17
- #define HELP_BUTTON 33 // help button (needs to be determined)
+//PINS NEED TO BE DETERMINED BEFORE WIRING ANY CIRCUIT
+#define RFID_SS 22
+#define RFID_RST 23
+#define GREEN_LED 16
+#define RED_LED 17
+#define HELP_BUTTON 33 // help button (needs to be determined)
+#define POT_PIN 34 
+#define SCREEN_WIDTH 128 
+#define SCREEN_HEIGHT 64 
+#define OLED_MOSI 11 
+#define OLED_CLK 13 
+#define OLED_DC 9 
+#define OLED_CS 10 
+#define OLED_RST 8 
 
- //Sets previous UID reading
- String lastUID = "";
+//FOR OLED DISPLAY
+Adafruit_SSD1306 display( 
+SCREEN_WIDTH, 
+SCREEN_HEIGHT, 
+OLED_MOSI, 
+OLED_CLK, 
+OLED_DC, 
+OLED_RST, 
+OLED_CS 
+);  
+
+//BMP SENSOR ARRAY
+float tempreading[10];
+
+//BMP sensor initialization
+Adafruit_BMP280 bmp; 
+
+//BMP temperature variable
+float temperature;
+
+//Sets previous UID reading
+String lastUID = "";
  
 //millis Timers:
 unsigned long lastScanTime = 0;
 unsigned long Start = 0;
 unsigned long Time = 0;
 unsigned long lastblinktime = 0;
+unsigned long lasttemptime = 0;
 
 MFRC522 rfid(RFID_SS, RFID_RST); //RFID initialization
 String authorizedUIDs[] = {"9C 2B 4D 05"}; //authorized UIDs to be changed if neccessary
@@ -181,8 +214,22 @@ void onCardScanned(String uid)
 void setup() {
 Serial.begin(115200);
 SPI.begin(); //initalize SPI communication
+Wire.begin(); //For I2C communication
+display.begin(SSD1306_SWITCHCAPVCC); //Starts the OLED display
 rfid.PCD_Init();
 delay(10);
+//For bmp sensor
+ if (bmp.begin(0x76)){ 
+    Serial.println("BMP280 Found at 0x76"); 
+  }
+ else if(bmp.begin(0x77))
+ { 
+    Serial.println("BMP280 Found at 0x77");
+  }
+  else
+  {
+   Serial.println("BMP280 Not found");
+  }  
 rfid.PCD_DumpVersionToSerial(); //prints the firmware version to serial monitor IF RFID IS PROPERLLY WIRED
 pinMode(GREEN_LED, OUTPUT);
 pinMode(RED_LED, OUTPUT);
@@ -194,6 +241,13 @@ pinMode(RED_LED, OUTPUT);
 }
 
 void loop() {
+//BMP sensor tempature reading:
+if (millis() - lasttemptime >= 2000) {
+  lasttemptime = millis();
+  temperature = bmp.readTemperature(); // Read BMP280, update array, calculate average, and refresh OLED here
+}
+
+
 if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true) 
 { 
   String uid = getUID();

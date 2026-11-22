@@ -34,14 +34,19 @@ OLED_RST,
 OLED_CS 
 );  
 
+
 //BMP SENSOR ARRAY
 float tempreading[10];
+
+//BMP sensor variables:
+int tempindex = 0; //Tracks current position
+int readingcount = 0; //Tracks how many readings I have so far
 
 //BMP sensor initialization
 Adafruit_BMP280 bmp; 
 
-//BMP temperature variable
-float temperature;
+//BMP average temperature variable
+float avgtemp = 0;
 
 //Sets previous UID reading
 String lastUID = "";
@@ -128,13 +133,16 @@ void AccessGranted()
   if(roomOccupied == true){ //if room is occupied, make green LED high
     Serial.println("Room occupied!"); 
     digitalWrite(GREEN_LED,HIGH);
+    statusByte |= OCCUPIED_MASK; //Set bit 0, links statusByte to room state
     }else{        
       Serial.println("Room free!");
       digitalWrite(GREEN_LED,LOW);
+      statusByte &= ~OCCUPIED_MASK; //the ~ is a NOT operator, clear bit 0, links statusByte to room state
     }
     blinking = false;
     digitalWrite(RED_LED, LOW);
     indicatorOn = false;
+    OLEDupdate();
 }
 
 void AccessDenied() 
@@ -208,7 +216,22 @@ void onCardScanned(String uid)
     Serial.println("Help requested!");
   }
 
-
+void OLEDupdate(){ //For the OLED update, parameter of avgtemp
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  if(roomOccupied){
+    display.println("Room: Occupied");
+    }else{
+    display.println("Room: Free");
+  }
+  display.setCursor(0,20); //To be modified?
+  display.println("Avg Temp:");
+  display.print(avgtemp,1); //the 1 is to tell how much decimal is to be shown, 1 is 23.2 and 2 23.22 for example
+  display.print(" C");
+  display.display(); //Put the text on the screen
+  }
 
 
 void setup() {
@@ -238,13 +261,32 @@ pinMode(RED_LED, OUTPUT);
   pinMode(HELP_BUTTON, INPUT_PULLUP); // help button pin set to input with pullup resistor
   attachInterrupt(digitalPinToInterrupt(HELP_BUTTON), helpButton_ISR, FALLING); // attach interrupt to help button pin, triggers on falling edge (button press)
   printStatusByte(); //show starting value of status byte
+
+//Call OLED function to show room free and 0.0C
+OLEDupdate();
 }
 
+
+
 void loop() {
-//BMP sensor tempature reading:
+//BMP sensor tempature reading with arrays.
 if (millis() - lasttemptime >= 2000) {
   lasttemptime = millis();
-  temperature = bmp.readTemperature(); // Read BMP280, update array, calculate average, and refresh OLED here
+  tempreading[tempindex] = bmp.readTemperature();
+  tempindex++;
+if (tempindex >= 10) {
+  tempindex = 0;
+}
+//Prevents the first few reading from being averaged with 0.0 slots
+if(readingcount < 10){ //Counts the number of readings, does not surpass 10
+  readingcount++;
+  }
+  float sum = 0;
+  for(int i = 0; i < readingcount; i++){
+    sum = sum + tempreading[i];
+    }
+    avgtemp = sum/readingcount; //Takes the sum of the reading and divides it by 10
+    OLEDupdate();
 }
 
 

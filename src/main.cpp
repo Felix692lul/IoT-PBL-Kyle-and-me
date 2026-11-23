@@ -22,6 +22,7 @@
 #define OLED_DC 9 
 #define OLED_CS 10 
 #define OLED_RST 8 
+#define FAN_PIN 25
 
 //FOR OLED DISPLAY
 Adafruit_SSD1306 display( 
@@ -233,6 +234,22 @@ void OLEDupdate(){ //For the OLED update, parameter of avgtemp
   display.display(); //Put the text on the screen
   }
 
+void PWM(){
+  int potValue = analogRead(POT_PIN);
+  float setpoint = map(potValue, 0, 4095, 180, 300) / 10.0; //Map 0-4095 to 18 and 30 degree Celsius, keep 1 decimal place
+  if(avgtemp > setpoint){
+    statusByte |= TOO_HOT_MASK; //Set the bit
+     }else{
+      statusByte &= ~TOO_HOT_MASK; //Clears the bit
+    }
+    if(roomOccupied && avgtemp > setpoint){
+    
+     }else{
+      
+    }
+  ledcWrite(0, setpoint); //TO CHANGE
+}
+
 
 void setup() {
 Serial.begin(115200);
@@ -241,6 +258,10 @@ Wire.begin(); //For I2C communication
 display.begin(SSD1306_SWITCHCAPVCC); //Starts the OLED display
 rfid.PCD_Init();
 delay(10);
+//PWM settings
+ledcSetup(0, 5000, 8);  //Set PWM channel 0 to 5 kHz, 8-bit resolution
+ledcAttachPin(FAN_PIN, 0); //Attach the fan pin to PWM channel 0
+
 //For bmp sensor
  if (bmp.begin(0x76)){ 
     Serial.println("BMP280 Found at 0x76"); 

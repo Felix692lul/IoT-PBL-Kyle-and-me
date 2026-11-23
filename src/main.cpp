@@ -234,6 +234,7 @@ void OLEDupdate(){ //For the OLED update, parameter of avgtemp
   display.display(); //Put the text on the screen
   }
 
+//PWM FUNCTION
 void PWM(){
   int potValue = analogRead(POT_PIN);
   float setpoint = map(potValue, 0, 4095, 180, 300) / 10.0; //Map 0-4095 to 18 and 30 degree Celsius, keep 1 decimal place
@@ -242,12 +243,12 @@ void PWM(){
      }else{
       statusByte &= ~TOO_HOT_MASK; //Clears the bit
     }
+    int fanspeed = 0; //Create a variable for the speed of the fan
     if(roomOccupied && avgtemp > setpoint){
-    
-     }else{
-      
-    }
-  ledcWrite(0, setpoint); //TO CHANGE
+    fanspeed = constrain((avgtemp-setpoint)* 51, 0, 255); //the 0 next to the 51 is the degree, so if it's 1, then 1*51 = 51 out of 255(20% speed)
+                                                          //constrain caps the value at 255, so if there's a 6 degree difference, it will not go past 255(100% speed)                                   
+     }
+  ledcWrite(0, fanspeed); //attach the fanspeed variable, IF ERROR, CHANGE IT TO ledcWrite(FAN_PIN, fanspeed);
 }
 
 
@@ -258,7 +259,8 @@ Wire.begin(); //For I2C communication
 display.begin(SSD1306_SWITCHCAPVCC); //Starts the OLED display
 rfid.PCD_Init();
 delay(10);
-//PWM settings
+
+//PWM settings, IF THERE IS ERROR HERE, SWAP TWO LINES BELOW FOR ledcAttach(FAN_PIN, 5000, 8); 
 ledcSetup(0, 5000, 8);  //Set PWM channel 0 to 5 kHz, 8-bit resolution
 ledcAttachPin(FAN_PIN, 0); //Attach the fan pin to PWM channel 0
 
@@ -347,5 +349,6 @@ if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true)
     lastPrintedStatus = statusByte;
     printStatusByte();
   }
+  PWM(); //CALL THE PWM FUNCTION, SO IT LOOPS CONTINIOUSLY
 }
 

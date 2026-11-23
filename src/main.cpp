@@ -6,6 +6,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_Sensor.h> 
 #include <Adafruit_BMP280.h>
+#include <SD.h>
 
 // Global variables
 //PINS NEED TO BE DETERMINED BEFORE WIRING ANY CIRCUIT
@@ -67,7 +68,6 @@ bool indicatorOn = false;
 bool blinking = false;
 
 
-
 // Events and Status Byte
 
  // Status Byte Bit Masks
@@ -87,8 +87,52 @@ bool blinking = false;
   unsigned long helpStart = 0; // help button start time when it was called
 
 
+// Data logging variables
+  const int chipselect = 4; // SD card CS pin (NEEDS TO BE DETERMINED)
+  File dataFile; // File object for SD card
+
 
 //Functions:
+
+
+// starts SD card and creates csv file
+  void startLogging() {
+    Serial.println("Starting SD card...");
+    if (SD.begin(chipselect) == true) {
+      Serial.println("SD Card Found!");
+
+    // Write the header to the CSV file if it doesn't exist
+      if (SD.exists("/datalog.csv") == false) {
+        dataFile = SD.open("datalog.csv", FILE_WRITE);
+        dataFile.println("Time_ms,Event");
+        dataFile.close();
+    }
+  }
+  else 
+  {
+    Serial.println("SD Card not found");
+  }
+}
+
+// Logs event to the csv file
+  void logEvent(String event) {
+    dataFile = SD.open("/datalog.csv", FILE_APPEND);
+    if (dataFile) {
+      dataFile.print(millis());
+      dataFile.print(",");
+      dataFile.println(event);
+      dataFile.close();
+      Serial.print("Logged: ");
+      Serial.println(event);
+  }
+  else 
+  {
+    Serial.println("Could not open datalog.csv");
+  }
+}
+
+
+
 String getUID() //This functions turns the card's UID into a readable text format
 {
   String uid = "";
@@ -132,11 +176,13 @@ void AccessGranted()
   allIndicatorsOff();
   roomOccupied = !roomOccupied; //Sets the room occupied to true
   if(roomOccupied == true){ //if room is occupied, make green LED high
-    Serial.println("Room occupied!"); 
+    Serial.println("Room occupied!");
+    logEvent("CHECKIN"); // Log the check-in event to the SD card
     digitalWrite(GREEN_LED,HIGH);
     statusByte |= OCCUPIED_MASK; //Set bit 0, links statusByte to room state
     }else{        
       Serial.println("Room free!");
+      logEvent("CHECKOUT"); // Log the check-out event to the SD card
       digitalWrite(GREEN_LED,LOW);
       statusByte &= ~OCCUPIED_MASK; //the ~ is a NOT operator, clear bit 0, links statusByte to room state
     }
@@ -215,6 +261,7 @@ void onCardScanned(String uid)
     statusByte |= HELP_MASK; // set bit to 2
     helpStart = millis(); // start the help timer
     Serial.println("Help requested!");
+    logEvent("HELP"); // Log the help event to the SD card
   }
 
 void OLEDupdate(){ //For the OLED update, parameter of avgtemp
@@ -258,6 +305,7 @@ SPI.begin(); //initalize SPI communication
 Wire.begin(); //For I2C communication
 display.begin(SSD1306_SWITCHCAPVCC); //Starts the OLED display
 rfid.PCD_Init();
+startLogging(); // Start SD card logging
 delay(10);
 
 //PWM settings, IF THERE IS ERROR HERE, SWAP TWO LINES BELOW FOR ledcAttach(FAN_PIN, 5000, 8); 

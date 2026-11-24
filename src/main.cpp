@@ -7,6 +7,9 @@
 #include <Adafruit_Sensor.h> 
 #include <Adafruit_BMP280.h>
 #include <SD.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
 
 // Global variables
 //PINS NEED TO BE DETERMINED BEFORE WIRING ANY CIRCUIT
@@ -68,6 +71,17 @@ bool indicatorOn = false;
 bool blinking = false;
 
 
+// WiFi credentials
+
+ const char* ssid="Kyle ESP32"; //WiFi SSID
+ const char* password="kyle123!"; //WiFi password
+
+ WebServer server(80); // Create a web server object that listens for HTTP request on port 80
+
+ // TEMPORARY VARIABLE FOR TESTING PURPOSES (will change later)
+ int fanLevel = 2; // Fan level (0-3) to be changed based on temperature readings
+ 
+
 // Events and Status Byte
 
  // Status Byte Bit Masks
@@ -103,7 +117,7 @@ bool blinking = false;
 
     // Write the header to the CSV file if it doesn't exist
       if (SD.exists("/datalog.csv") == false) {
-        dataFile = SD.open("datalog.csv", FILE_WRITE);
+        dataFile = SD.open("/datalog.csv", FILE_WRITE);
         dataFile.println("Time_ms,Event");
         dataFile.close();
     }
@@ -298,6 +312,26 @@ void PWM(){
   ledcWrite(0, fanspeed); //attach the fanspeed variable, IF ERROR, CHANGE IT TO ledcWrite(FAN_PIN, fanspeed);
 }
 
+// this runs when someone opens /data, and sends the room data as JSON
+void handleData() {
+  Serial.println("data route accessed");
+  JsonDocument doc;
+
+  if (roomOccupied == true) { // is room occupied?
+    doc ["room"] = "occupied"; // Yes: add room occupied to the JSON document
+  } else {
+    doc ["room"] = "free"; // No: add room free to the JSON document
+  }
+  doc ["avg_temp"] = avgtemp; // Add average temperature to the JSON document
+  doc ["fan_level"] = fanLevel; // Add fan level to the JSON document
+  doc ["status_byte"] = statusByte; // Add status byte to the JSON document
+
+  String out; // text holds the finished json
+  serializeJson(doc, out); // turn the document into JSON text and put it in the out variable
+  server.send(200, "application/json", out); // send it back to the client with a 200 OK and the browser knows it's JSON data
+}
+
+
 
 void setup() {
 Serial.begin(115200);
@@ -307,6 +341,20 @@ display.begin(SSD1306_SWITCHCAPVCC); //Starts the OLED display
 rfid.PCD_Init();
 startLogging(); // Start SD card logging
 delay(10);
+
+
+// Wi-Fi access point
+  WiFi.softAP(ssid, password); // creates the wifi network with name/password
+    Serial.print("IP address: ");
+    Serial.println(WiFi.softAPIP()); // prints the esp32's ip address
+
+// Routes for the web server
+  server.on("/data", handleData); // when browser asks for /data, call handleData();
+
+// Server start
+  server.begin(); // Start the web server
+    Serial.println("Server started");
+
 
 //PWM settings, IF THERE IS ERROR HERE, SWAP TWO LINES BELOW FOR ledcAttach(FAN_PIN, 5000, 8); 
 ledcSetup(0, 5000, 8);  //Set PWM channel 0 to 5 kHz, 8-bit resolution
@@ -340,6 +388,9 @@ OLEDupdate();
 
 
 void loop() {
+
+server.handleClient(); // check if a browser is asking for a page at every loop
+
 //BMP sensor tempature reading with arrays.
 if (millis() - lasttemptime >= 2000) {
   lasttemptime = millis();

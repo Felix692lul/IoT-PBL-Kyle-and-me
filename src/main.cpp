@@ -1,4 +1,5 @@
-#include <Arduino.h> // Libraries
+// Libraries
+#include <Arduino.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <MFRC522.h>
@@ -99,6 +100,12 @@ bool blinking = false;
  // Help button timing
   const unsigned long HELP_TIME = 10000; // help stays on for 10 secs
   unsigned long helpStart = 0; // help button start time when it was called
+
+// Automatic Check-out after inactivity
+  const unsigned long CHECKOUT_TIME = 60000; // Checkout time stays on for 10 secs
+  const unsigned long WARNING_TIME = 5000; // Warning time stays on for 5 secs
+  unsigned long checkIn_Time = 0; // last checkIn time when it was called
+  bool warningGiven = false;
 
 
 // Data logging variables
@@ -385,6 +392,21 @@ pinMode(RED_LED, OUTPUT);
 OLEDupdate();
 }
 
+
+// Event handler for automatic check-out after inactivity
+
+ void autoCheckout() {
+  roomOccupied = false
+  statusByte &= ~OCCUPIED_MASK;
+  blinking = false;
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+  Serial.print("Auto Checkout!")
+  logEvent("CHECKOUT");
+  OLEDupdate();
+
+  
+  }
 
 
 void loop() {

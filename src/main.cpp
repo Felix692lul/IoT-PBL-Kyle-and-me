@@ -13,50 +13,26 @@
 #include <ArduinoJson.h>
 
 // Global variables
-//PINS NEED TO BE DETERMINED BEFORE WIRING ANY CIRCUIT
-#define RFID_SS 22
-#define RFID_RST 23
-#define GREEN_LED 16
-#define RED_LED 17
-#define HELP_BUTTON 33 // help button (needs to be determined)
+//PINS DETERMINED
+#define RFID_SDA 5
+#define RFID_SCK 18
+#define RFID_MOSI 23
+#define RFID_MISO 19
+#define RFID_RST 27
 #define POT_PIN 34 
+#define GREEN_LED 25
+#define RED_LED 26
+#define HELP_BUTTON 32 
 #define SCREEN_WIDTH 128 
-#define SCREEN_HEIGHT 64 
-#define OLED_MOSI 11 
-#define OLED_CLK 13 
-#define OLED_DC 9 
-#define OLED_CS 10 
-#define OLED_RST 8 
-#define FAN_PIN 25
-
-//FOR OLED DISPLAY
-Adafruit_SSD1306 display( 
-SCREEN_WIDTH, 
-SCREEN_HEIGHT, 
-OLED_MOSI, 
-OLED_CLK, 
-OLED_DC, 
-OLED_RST, 
-OLED_CS 
-);  
+#define SCREEN_HEIGHT 64
+#define OLED_CLK 18
+#define OLED_DIN 23
+#define OLED_CS 13
+#define OLED_RST 16
+#define OLED_DC 14
+#define FAN_PIN 25 //DO NOT CONNECT FAN DIRECTLY TO ESP32, CAN SHORT IT, USE DRIVER CONTROL COMPONENT IN KIT, REQUIRES BATTERY
 
 
-//BMP SENSOR ARRAY
-float tempreading[10];
-
-//BMP sensor variables:
-int tempindex = 0; //Tracks current position
-int readingcount = 0; //Tracks how many readings I have so far
-
-//BMP sensor initialization
-Adafruit_BMP280 bmp; 
-
-//BMP average temperature variable
-float avgtemp = 0;
-
-//Sets previous UID reading
-String lastUID = "";
- 
 //millis Timers:
 unsigned long lastScanTime = 0;
 unsigned long Start = 0;
@@ -64,27 +40,43 @@ unsigned long Time = 0;
 unsigned long lastblinktime = 0;
 unsigned long lasttemptime = 0;
 
-MFRC522 rfid(RFID_SS, RFID_RST); //RFID initialization
+MFRC522 rfid(RFID_SDA, RFID_RST); //RFID initialization
 String authorizedUIDs[] = {"9C 2B 4D 05"}; //authorized UIDs to be changed if neccessary
 int numAuthorized = 1; //Nb of authorized UIDs
 bool roomOccupied = false;
 bool indicatorOn = false;
 bool blinking = false;
+//Sets previous UID reading
+String lastUID = "";
+
+//FOR OLED DISPLAY
+Adafruit_SSD1306 display(
+SCREEN_WIDTH, 
+SCREEN_HEIGHT, 
+OLED_CLK, 
+OLED_DIN, 
+OLED_RST, 
+OLED_CS,
+OLED_DC 
+);  
 
 
-// WiFi credentials
-
- const char* ssid="Kyle ESP32"; //WiFi SSID
- const char* password="kyle123!"; //WiFi password
-
- WebServer server(80); // Create a web server object that listens for HTTP request on port 80
+//FOR BMP SENSOR
+//BMP SENSOR ARRAY
+float tempreading[10];
+//BMP sensor variables:
+int tempindex = 0; //Tracks current position
+int readingcount = 0; //Tracks how many readings I have so far
+//BMP sensor initialization
+Adafruit_BMP280 bmp; 
+//BMP average temperature variable
+float avgtemp = 0;
 
  // TEMPORARY VARIABLE FOR TESTING PURPOSES (will change later)
  int fanLevel = 2; // Fan level (0-3) to be changed based on temperature readings
  
 
 // Events and Status Byte
-
  // Status Byte Bit Masks
   const byte OCCUPIED_MASK = 0b00000001; // Bit 0: Room occupied
   const byte TOO_HOT_MASK = 0b00000010; // Bit 1: Room too hot
@@ -93,7 +85,7 @@ bool blinking = false;
   byte statusByte = 0; // Status byte starting value = 0 (all bits are 0, meaning room is free, temperature is normal, and help button is not pressed)
   byte lastPrintedStatus = 0; // Last printed status byte value
 
- // Help button variables
+   // Help button variables
   volatile bool helpFlag = false; // Flag to show if the help button has been pressed
   volatile unsigned long lastHelpTime = 0; // Time when the help button was pressed
 
@@ -101,247 +93,27 @@ bool blinking = false;
   const unsigned long HELP_TIME = 10000; // help stays on for 10 secs
   unsigned long helpStart = 0; // help button start time when it was called
 
-// Automatic Check-out after inactivity
+  // Data logging variables
+  const int chipselect = 4; // SD card CS pin 
+  File dataFile; // File object for SD card
+
+ // WiFi credentials
+ const char* ssid="Kyle ESP32"; //WiFi SSID
+ const char* password="kyle123!"; //WiFi password
+
+ WebServer server(80); // Create a web server object that listens for HTTP request on port 80
+
+ 
+// Automatic Check-out after inactivity,from the enhanced feature
   const unsigned long CHECKOUT_TIME = 60000; // Checkout time stays on for 10 secs
   const unsigned long WARNING_TIME = 5000; // Warning time stays on for 5 secs
   unsigned long CHECKIN_TIME = 0; // last checkIn time when it was called
   bool warningGiven = false;
 
 
-// Data logging variables
-  const int chipselect = 4; // SD card CS pin (NEEDS TO BE DETERMINED)
-  File dataFile; // File object for SD card
 
-
-//Functions:
-
-
-// starts SD card and creates csv file
-  void startLogging() {
-    Serial.println("Starting SD card...");
-    if (SD.begin(chipselect) == true) {
-      Serial.println("SD Card Found!");
-
-    // Write the header to the CSV file if it doesn't exist
-      if (SD.exists("/datalog.csv") == false) {
-        dataFile = SD.open("/datalog.csv", FILE_WRITE);
-        dataFile.println("Time_ms,Event");
-        dataFile.close();
-    }
-  }
-  else 
-  {
-    Serial.println("SD Card not found");
-  }
-}
-
-// Logs event to the csv file
-  void logEvent(String event) {
-    dataFile = SD.open("/datalog.csv", FILE_APPEND);
-    if (dataFile) {
-      dataFile.print(millis());
-      dataFile.print(",");
-      dataFile.println(event);
-      dataFile.close();
-      Serial.print("Logged: ");
-      Serial.println(event);
-  }
-  else 
-  {
-    Serial.println("Could not open datalog.csv");
-  }
-}
-
-
-
-String getUID() //This functions turns the card's UID into a readable text format
-{
-  String uid = "";
-  for (byte i = 0; i < rfid.uid.size; i++) {
-    if (rfid.uid.uidByte[i] < 0x10) {
-      uid = uid + "0";
-    }
-    uid = uid + String(rfid.uid.uidByte[i], HEX);
-    if (i < rfid.uid.size - 1) {
-      uid = uid + " ";
-    }
-  }
-  uid.toUpperCase();
-  return uid;
-}
-
-bool isAuthorized(String uid) { 
-  for (int i = 0; i < numAuthorized; i++) {  
-    if (uid == authorizedUIDs[i]) {  
-      return true; 
-    } 
-  } 
-  return false; 
-}
-
-void Startindicatortimer(unsigned long duration)
-{ 
- Start = millis();
- Time = duration;
- indicatorOn = true;
-}  
-void allIndicatorsOff() 
-{ 
-  digitalWrite(GREEN_LED, LOW); 
-  digitalWrite(RED_LED, LOW); 
-} 
-
-void AccessGranted() 
-{
-
-  allIndicatorsOff();
-  roomOccupied = !roomOccupied; //Sets the room occupied to true
-  if(roomOccupied == true){ //if room is occupied, make green LED high
-    Serial.println("Room occupied!");
-    logEvent("CHECKIN"); // Log the check-in event to the SD card
-    digitalWrite(GREEN_LED,HIGH);
-    statusByte |= OCCUPIED_MASK; //Set bit 0, links statusByte to room state
-    CHECKIN_TIME = millis(); // Reset the check-in time for auto checkout
-    warningGiven = false; // Reset the warning flag for auto checkout
-    }else{        
-      Serial.println("Room free!");
-      logEvent("CHECKOUT"); // Log the check-out event to the SD card
-      digitalWrite(GREEN_LED,LOW);
-      statusByte &= ~OCCUPIED_MASK; //the ~ is a NOT operator, clear bit 0, links statusByte to room state
-    }
-    blinking = false;
-    digitalWrite(RED_LED, LOW);
-    indicatorOn = false;
-    OLEDupdate();
-}
-
-void AccessDenied() 
-{ 
-  Serial.println("Unknown card detected!");
-  allIndicatorsOff();
-  blinking = true;
-  digitalWrite(RED_LED, HIGH);
-  lastblinktime = millis();
-  Startindicatortimer(2000); //The RED LED will only blink for 2 second, adjust if needed
-}
-
-void Timerexpired()
-{
-allIndicatorsOff();
-indicatorOn = false;
-blinking = false;
-//GREEN_LED MATCHES THE ROOM STATE
-if (roomOccupied == true) {
-  digitalWrite(GREEN_LED, HIGH);
-  } else {
-    digitalWrite(GREEN_LED, LOW);
-  }
-}
-
-void onCardScanned(String uid) 
-{ 
-  if (uid == lastUID && millis() - lastScanTime < 2000){  
-    Serial.println("Repeat ignored"); 
-    return; 
-  } 
-  lastUID = uid;
-  lastScanTime = millis();
-  Serial.print("Card UID: "); 
-  Serial.println(uid); 
-  if (isAuthorized(uid) == true) 
-  { 
-    AccessGranted(); 
-  } 
-  else 
-  { 
-    AccessDenied(); 
-  } 
-} 
-
-
-// Interrupt Service ROutines (ISRs) for the help button
-  void IRAM_ATTR helpButton_ISR() {
-
-    // Ignore presses less than 200 ms apart (debounce)
-    if (millis() - lastHelpTime > 200) {
-      lastHelpTime = millis();
-      helpFlag = true; // Set the help flag to true
-    }
-  }
-
-
-// Prints the status byte as 8 binary digits
-  void printStatusByte() {
-    Serial.print("Status Byte: ");
-    for (int i =7; i >= 0; i--) {
-      Serial.print((statusByte >> i) & 1);
-    }
-    Serial.println();
-  }
-
-// Event handler for help request - called from loop()
-  void onHelpRequested(){
-    statusByte |= HELP_MASK; // set bit to 2
-    helpStart = millis(); // start the help timer
-    Serial.println("Help requested!");
-    logEvent("HELP"); // Log the help event to the SD card
-  }
-
-void OLEDupdate(){ //For the OLED update, parameter of avgtemp
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(0, 0);
-  if(roomOccupied){
-    display.println("Room: Occupied");
-    }else{
-    display.println("Room: Free");
-  }
-  display.setCursor(0,20); //To be modified?
-  display.println("Avg Temp:");
-  display.print(avgtemp,1); //the 1 is to tell how much decimal is to be shown, 1 is 23.2 and 2 23.22 for example
-  display.print(" C");
-  display.display(); //Put the text on the screen
-  }
-
-//PWM FUNCTION
-void PWM(){
-  int potValue = analogRead(POT_PIN);
-  float setpoint = map(potValue, 0, 4095, 180, 300) / 10.0; //Map 0-4095 to 18 and 30 degree Celsius, keep 1 decimal place
-  if(avgtemp > setpoint){
-    statusByte |= TOO_HOT_MASK; //Set the bit
-     }else{
-      statusByte &= ~TOO_HOT_MASK; //Clears the bit
-    }
-    int fanspeed = 0; //Create a variable for the speed of the fan
-    if(roomOccupied && avgtemp > setpoint){
-    fanspeed = constrain((avgtemp-setpoint)* 51, 0, 255); //the 0 next to the 51 is the degree, so if it's 1, then 1*51 = 51 out of 255(20% speed)
-                                                          //constrain caps the value at 255, so if there's a 6 degree difference, it will not go past 255(100% speed)                                   
-     }
-  ledcWrite(0, fanspeed); //attach the fanspeed variable, IF ERROR, CHANGE IT TO ledcWrite(FAN_PIN, fanspeed);
-}
-
-// this runs when someone opens /data, and sends the room data as JSON
-void handleData() {
-  Serial.println("data route accessed");
-  JsonDocument doc;
-
-  if (roomOccupied == true) { // is room occupied?
-    doc ["room"] = "occupied"; // Yes: add room occupied to the JSON document
-  } else {
-    doc ["room"] = "free"; // No: add room free to the JSON document
-  }
-  doc ["avg_temp"] = avgtemp; // Add average temperature to the JSON document
-  doc ["fan_level"] = fanLevel; // Add fan level to the JSON document
-  doc ["status_byte"] = statusByte; // Add status byte to the JSON document
-
-  String out; // text holds the finished json
-  serializeJson(doc, out); // turn the document into JSON text and put it in the out variable
-  server.send(200, "application/json", out); // send it back to the client with a 200 OK and the browser knows it's JSON data
-}
-
-
-
+//FUNCTIONS:
+//SETUP:
 void setup() {
 Serial.begin(115200);
 SPI.begin(); //initalize SPI communication
@@ -394,25 +166,12 @@ OLEDupdate();
 }
 
 
-// Event handler for automatic check-out after inactivity
-
- void autoCheckout() {
-  roomOccupied = false; // the room is free again
-  statusByte &= ~OCCUPIED_MASK; // clear bit 0
-  blinking = false; // stop blinking
-    digitalWrite(RED_LED, LOW);
-    digitalWrite(GREEN_LED, LOW);
-  Serial.print("Auto Checkout!");
-  logEvent("AUTO_CHECKOUT"); // log it to the SD card
-  OLEDupdate(); // show "Room: Free"
-  }
-
-
+//LOOP:
 void loop() {
 
 server.handleClient(); // check if a browser is asking for a page at every loop
 
-//BMP sensor tempature reading with arrays.
+//BMP SENSOR TEMPERATURE READING WITH ARRAY
 if (millis() - lasttemptime >= 2000) {
   lasttemptime = millis();
   tempreading[tempindex] = bmp.readTemperature();
@@ -486,4 +245,251 @@ if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true)
   }
   PWM(); //CALL THE PWM FUNCTION, SO IT LOOPS CONTINIOUSLY
 }
+
+
+//RFID LOGIC:
+String getUID() //This functions turns the card's UID into a readable text format, used lab 9 for this also.
+{
+  String uid = "";
+  for (byte i = 0; i < rfid.uid.size; i++) {
+    if (rfid.uid.uidByte[i] < 0x10) {
+      uid = uid + "0";
+    }
+    uid = uid + String(rfid.uid.uidByte[i], HEX);
+    if (i < rfid.uid.size - 1) {
+      uid = uid + " ";
+    }
+  }
+  uid.toUpperCase();
+  return uid;
+}
+
+bool isAuthorized(String uid) { 
+  for (int i = 0; i < numAuthorized; i++) {  
+    if (uid == authorizedUIDs[i]) {  
+      return true; 
+    } 
+  } 
+  return false; 
+}
+
+void Startindicatortimer(unsigned long duration)
+{ 
+ Start = millis();
+ Time = duration;
+ indicatorOn = true;
+}  
+void allIndicatorsOff() 
+{ 
+  digitalWrite(GREEN_LED, LOW); 
+  digitalWrite(RED_LED, LOW); 
+} 
+
+void onCardScanned(String uid) //Used lab 9 for this
+{ 
+  if (uid == lastUID && millis() - lastScanTime < 2000){  
+    Serial.println("Repeat ignored"); 
+    return; 
+  } 
+  lastUID = uid;
+  lastScanTime = millis();
+  Serial.print("Card UID: "); 
+  Serial.println(uid); 
+  if (isAuthorized(uid) == true) 
+  { 
+    AccessGranted(); 
+  } 
+  else 
+  { 
+    AccessDenied(); 
+  } 
+}
+
+void AccessGranted() 
+{
+
+  allIndicatorsOff();
+  roomOccupied = !roomOccupied; //Sets the room occupied to true
+  if(roomOccupied == true){ //if room is occupied, make green LED high
+    Serial.println("Room occupied!");
+    logEvent("CHECKIN"); // Log the check-in event to the SD card
+    digitalWrite(GREEN_LED,HIGH);
+    statusByte |= OCCUPIED_MASK; //Set bit 0, links statusByte to room state
+    CHECKIN_TIME = millis(); // Reset the check-in time for auto checkout
+    warningGiven = false; // Reset the warning flag for auto checkout
+    }else{        
+      Serial.println("Room free!");
+      logEvent("CHECKOUT"); // Log the check-out event to the SD card
+      digitalWrite(GREEN_LED,LOW);
+      statusByte &= ~OCCUPIED_MASK; //the ~ is a NOT operator, clear bit 0, links statusByte to room state
+    }
+    blinking = false;
+    digitalWrite(RED_LED, LOW);
+    indicatorOn = false;
+    OLEDupdate();
+}
+
+void AccessDenied() 
+{ 
+  Serial.println("Unknown card detected!");
+  allIndicatorsOff();
+  blinking = true;
+  digitalWrite(RED_LED, HIGH);
+  lastblinktime = millis();
+  Startindicatortimer(2000); //The RED LED will only blink for 2 second, adjust if needed
+}
+
+void Timerexpired()
+{
+allIndicatorsOff();
+indicatorOn = false;
+blinking = false;
+//GREEN_LED MATCHES THE ROOM STATE
+if (roomOccupied == true) {
+  digitalWrite(GREEN_LED, HIGH);
+  } else {
+    digitalWrite(GREEN_LED, LOW);
+  }
+}
+
+void OLEDupdate(){ //For the OLED update, parameter of avgtemp
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  if(roomOccupied){
+    display.println("Room: Occupied");
+    }else{
+    display.println("Room: Free");
+  }
+  display.setCursor(0,20); //To be modified?
+  display.println("Avg Temp:");
+  display.print(avgtemp,1); //the 1 is to tell how much decimal is to be shown, 1 is 23.2 and 2 23.22 for example
+  display.print(" C");
+  display.display(); //Put the text on the screen
+  }
+
+
+//PWM FUNCTION
+void PWM(){
+  int potValue = analogRead(POT_PIN);
+  float setpoint = map(potValue, 0, 4095, 180, 300) / 10.0; //Map 0-4095 to 18 and 30 degree Celsius, keep 1 decimal place
+  if(avgtemp > setpoint){
+    statusByte |= TOO_HOT_MASK; //Set the bit
+     }else{
+      statusByte &= ~TOO_HOT_MASK; //Clears the bit
+    }
+    int fanspeed = 0; //Create a variable for the speed of the fan
+    if(roomOccupied && avgtemp > setpoint){
+    fanspeed = constrain((avgtemp-setpoint)* 51, 0, 255); //the 0 next to the 51 is the degree, so if it's 1, then 1*51 = 51 out of 255(20% speed)
+                                                          //constrain caps the value at 255, so if there's a 6 degree difference, it will not go past 255(100% speed)                                   
+     }
+  ledcWrite(0, fanspeed); //attach the fanspeed variable, IF ERROR, CHANGE IT TO ledcWrite(FAN_PIN, fanspeed);
+}
+
+
+// Event handler for help request - called from loop()
+  void onHelpRequested(){
+    statusByte |= HELP_MASK; // set bit to 2
+    helpStart = millis(); // start the help timer
+    Serial.println("Help requested!");
+    logEvent("HELP"); // Log the help event to the SD card
+  }
+
+
+// Interrupt Service ROutines (ISRs) for the help button
+  void IRAM_ATTR helpButton_ISR() {
+
+    // Ignore presses less than 200 ms apart (debounce)
+    if (millis() - lastHelpTime > 200) {
+      lastHelpTime = millis();
+      helpFlag = true; // Set the help flag to true
+    }
+  }
+
+
+
+// Prints the status byte as 8 binary digits
+  void printStatusByte() {
+    Serial.print("Status Byte: ");
+    for (int i =7; i >= 0; i--) {
+      Serial.print((statusByte >> i) & 1);
+    }
+    Serial.println();
+  }
+
+  
+
+// starts SD card and creates csv file
+  void startLogging() {
+    Serial.println("Starting SD card...");
+    if (SD.begin(chipselect) == true) {
+      Serial.println("SD Card Found!");
+
+    // Write the header to the CSV file if it doesn't exist
+      if (SD.exists("/datalog.csv") == false) {
+        dataFile = SD.open("/datalog.csv", FILE_WRITE);
+        dataFile.println("Time_ms,Event");
+        dataFile.close();
+    }
+  }
+  else 
+  {
+    Serial.println("SD Card not found");
+  }
+}
+
+
+
+// Logs event to the csv file
+  void logEvent(String event) {
+    dataFile = SD.open("/datalog.csv", FILE_APPEND);
+    if (dataFile) {
+      dataFile.print(millis());
+      dataFile.print(",");
+      dataFile.println(event);
+      dataFile.close();
+      Serial.print("Logged: ");
+      Serial.println(event);
+  }
+  else 
+  {
+    Serial.println("Could not open datalog.csv");
+  }
+}
+
+// this runs when someone opens /data, and sends the room data as JSON
+void handleData() {
+  Serial.println("data route accessed");
+  JsonDocument doc;
+
+  if (roomOccupied == true) { // is room occupied?
+    doc ["room"] = "occupied"; // Yes: add room occupied to the JSON document
+  } else {
+    doc ["room"] = "free"; // No: add room free to the JSON document
+  }
+  doc ["avg_temp"] = avgtemp; // Add average temperature to the JSON document
+  doc ["fan_level"] = fanLevel; // Add fan level to the JSON document
+  doc ["status_byte"] = statusByte; // Add status byte to the JSON document
+
+  String out; // text holds the finished json
+  serializeJson(doc, out); // turn the document into JSON text and put it in the out variable
+  server.send(200, "application/json", out); // send it back to the client with a 200 OK and the browser knows it's JSON data
+}
+
+
+// Event handler for automatic check-out after inactivity
+ void autoCheckout() {
+  roomOccupied = false; // the room is free again
+  statusByte &= ~OCCUPIED_MASK; // clear bit 0
+  blinking = false; // stop blinking
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, LOW);
+  Serial.print("Auto Checkout!");
+  logEvent("AUTO_CHECKOUT"); // log it to the SD card
+  OLEDupdate(); // show "Room: Free"
+  }
+
+
+
 

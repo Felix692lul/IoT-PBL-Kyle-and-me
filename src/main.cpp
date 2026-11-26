@@ -104,7 +104,7 @@ bool blinking = false;
 // Automatic Check-out after inactivity
   const unsigned long CHECKOUT_TIME = 60000; // Checkout time stays on for 10 secs
   const unsigned long WARNING_TIME = 5000; // Warning time stays on for 5 secs
-  unsigned long checkIn_Time = 0; // last checkIn time when it was called
+  unsigned long CHECKIN_TIME = 0; // last checkIn time when it was called
   bool warningGiven = false;
 
 
@@ -201,6 +201,8 @@ void AccessGranted()
     logEvent("CHECKIN"); // Log the check-in event to the SD card
     digitalWrite(GREEN_LED,HIGH);
     statusByte |= OCCUPIED_MASK; //Set bit 0, links statusByte to room state
+    CHECKIN_TIME = millis(); // Reset the check-in time for auto checkout
+    warningGiven = false; // Reset the warning flag for auto checkout
     }else{        
       Serial.println("Room free!");
       logEvent("CHECKOUT"); // Log the check-out event to the SD card
@@ -364,8 +366,7 @@ delay(10);
 
 
 //PWM settings, IF THERE IS ERROR HERE, SWAP TWO LINES BELOW FOR ledcAttach(FAN_PIN, 5000, 8); 
-ledcSetup(0, 5000, 8);  //Set PWM channel 0 to 5 kHz, 8-bit resolution
-ledcAttachPin(FAN_PIN, 0); //Attach the fan pin to PWM channel 0
+ledcAttach(FAN_PIN, 5000, 8); // attach the fan pin to a PWM channel, set frequency to 5kHz and resolution to 8 bits
 
 //For bmp sensor
  if (bmp.begin(0x76)){ 
@@ -396,16 +397,14 @@ OLEDupdate();
 // Event handler for automatic check-out after inactivity
 
  void autoCheckout() {
-  roomOccupied = false
-  statusByte &= ~OCCUPIED_MASK;
-  blinking = false;
-  digitalWrite(RED_LED, LOW);
-  digitalWrite(GREEN_LED, LOW);
-  Serial.print("Auto Checkout!")
-  logEvent("CHECKOUT");
-  OLEDupdate();
-
-  
+  roomOccupied = false; // the room is free again
+  statusByte &= ~OCCUPIED_MASK; // clear bit 0
+  blinking = false; // stop blinking
+    digitalWrite(RED_LED, LOW);
+    digitalWrite(GREEN_LED, LOW);
+  Serial.print("Auto Checkout!");
+  logEvent("AUTO_CHECKOUT"); // log it to the SD card
+  OLEDupdate(); // show "Room: Free"
   }
 
 
@@ -463,7 +462,22 @@ if (rfid.PICC_IsNewCardPresent() == true && rfid.PICC_ReadCardSerial() == true)
   {
     statusByte &= ~HELP_MASK;
   }
+ 
   
+ // Timer: automatic checkout with warning first
+ if (roomOccupied == true) {
+  if (warningGiven == false && millis() - CHECKIN_TIME >= CHECKOUT_TIME - WARNING_TIME) { // warning time is up
+    warningGiven = true; // set the warning flag to true
+    Serial.println("warning: auto checkout in 5 seconds"); // print warning message
+    blinking = true; // start blinking the red LED
+    lastblinktime = millis(); // reset the blink timer
+  }
+
+  if (millis() - CHECKIN_TIME >= CHECKOUT_TIME) {   // time is up
+    autoCheckout();
+  }
+ }
+
 
  // Print the byte only when it changes
   if (statusByte != lastPrintedStatus){
